@@ -1,8 +1,16 @@
 --[[
-    ☁️ CloudyLib - Cloud Themed Roblox UI Library  (Enhanced Edition)
+    ☁️ CloudyLib - Cloud Themed Roblox UI Library  (Enhanced Edition v2)
     Silky smooth, sky-high UI for your scripts.
 
-    New in Enhanced Edition:
+    New in Enhanced Edition v2:
+        • Window:Toggle()         – Show/hide the window without destroying it
+        • Window:Destroy()        – Gracefully destroy the UI with animation
+        • Window:SaveConfig(file) – Save all Flags to a JSON file (writefile)
+        • Window:LoadConfig(file) – Load Flags back from a JSON file (readfile)
+        • Mobile / Touch support  – Dragging and sliders now work on touch devices
+        • Canvas auto-sizing      – ScrollingFrames always fit their content
+
+    Original features:
         • Paragraph     – titled multi-line text block
         • Label         – info label with optional icon tint & color override
         • Divider       – decorative horizontal rule
@@ -10,25 +18,26 @@
         • ColorPicker   – HSV picker with hex + RGB inputs
         • Keybind       – live key-capture with HoldToInteract support
         • Input         – text box with placeholder & RemoveTextAfterFocusLost
-        • Slider        – now has Increment and Range[min,max] like Rayfield
-        • Button        – unchanged, now returns :Set() handle
-        • Toggle        – now returns :Set() handle
+        • Slider        – Increment and Range[min,max] like Rayfield
+        • Button        – returns :Set() handle
+        • Toggle        – returns :Set() handle
         • Section       – unchanged
         • Notification  – polished toast with progress bar
         • ThemeSelector – dropdown + swatches for all 12 cloud themes
-        • Flags / Configuration-saving ready (Flags table on Window)
+        • Flags / Configuration-saving (SaveConfig/LoadConfig)
 
     Usage:
-        local Cloudy = loadstring(game:HttpGet("https://raw.githubusercontent.com/Larxyzs/CloudyLib/refs/heads/main/CloudyLib.lua"))()
+        local Cloudy = loadstring(game:HttpGet("YOUR_RAW_URL_HERE"))()
         local Window = Cloudy:CreateWindow({ Title = "My Script", Theme = "Cumulus" })
         local Tab = Window:CreateTab("Main", "⚡")
-        Tab:CreateToggle({ Name = "Fly", Default = false, Callback = function(v) end })
-
-    Docs:
-        https://larxyzs.github.io/CloudyLib/
-
-    Credits:
-        Luqzz (luqzzer, larxy, luqzzys)
+        Tab:CreateToggle({ Name = "Fly", Default = false, Flag = "Fly", Callback = function(v) end })
+        -- Save/Load config:
+        Window:SaveConfig("MyScript_Config.json")
+        Window:LoadConfig("MyScript_Config.json")
+        -- Show/hide:
+        Window:Toggle()
+        -- Destroy:
+        Window:Destroy()
 ]]
 
 -- // Services
@@ -353,33 +362,41 @@ function CloudyLib:CreateWindow(config)
     local minimized   = false
     local ContentFrame
 
-    MakeTopBtn(-10, "✕", Color3.fromRGB(200,55,55), function()
+    local closeBtn = MakeTopBtn(-10, "✕", Color3.fromRGB(200,55,55), function()
         Tween(Main, {Size = UDim2.new(0, size.X.Offset, 0, 0), BackgroundTransparency = 1}, 0.3)
         task.delay(0.35, function() ScreenGui:Destroy() end)
     end)
-    MakeTopBtn(-46, "—", theme.Border, function()
+    local minimizeBtn = MakeTopBtn(-46, "—", theme.Border, function()
         minimized = not minimized
         Tween(Main, {Size = minimized and UDim2.new(0, size.X.Offset, 0, 52) or size}, 0.3, Enum.EasingStyle.Back)
     end)
 
-    -- // Drag
+    -- // Drag (Mouse + Touch)
     local dragging, dragStart, startPos = false, nil, nil
+    local function isDragInput(input)
+        return input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch
+    end
+    local function isMoveInput(input)
+        return input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch
+    end
     Topbar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if isDragInput(input) then
             dragging  = true
             dragStart = input.Position
             startPos  = Main.Position
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        if dragging and isMoveInput(input) then
             local delta = input.Position - dragStart
             Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
                                        startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+        if isDragInput(input) then dragging = false end
     end)
 
     -- // Sidebar
@@ -524,6 +541,63 @@ function CloudyLib:CreateWindow(config)
             Tween(notif, {Size = UDim2.new(1,0,0,0), BackgroundTransparency = 1}, 0.28)
             task.delay(0.32, function() notif:Destroy() end)
         end)
+    end
+
+    -- // Toggle visibility
+    local _visible = true
+    function Window:Toggle()
+        _visible = not _visible
+        Main.Visible = _visible
+    end
+
+    -- // Destroy the UI entirely
+    function Window:Destroy()
+        Tween(Main, {Size = UDim2.new(0, size.X.Offset, 0, 0), BackgroundTransparency = 1}, 0.3)
+        task.delay(0.35, function() ScreenGui:Destroy() end)
+    end
+
+    -- // Config saving (uses writefile/readfile from exploit executor environment)
+    function Window:SaveConfig(fileName)
+        fileName = fileName or "CloudyLib_Config.json"
+        local data = {}
+        for flag, value in pairs(self.Flags) do
+            if typeof(value) == "Color3" then
+                data[flag] = {__type="Color3", r=value.R, g=value.G, b=value.B}
+            elseif type(value) == "table" then
+                data[flag] = {__type="array", v=value}
+            else
+                data[flag] = value
+            end
+        end
+        local HttpService = game:GetService("HttpService")
+        local ok, err = pcall(writefile, fileName, HttpService:JSONEncode(data))
+        if not ok then
+            warn("[CloudyLib] SaveConfig failed: " .. tostring(err))
+        end
+        return ok
+    end
+
+    function Window:LoadConfig(fileName)
+        fileName = fileName or "CloudyLib_Config.json"
+        local fileExists = pcall(isfile, fileName) and isfile(fileName)
+        if not fileExists then return false end
+        local ok, raw = pcall(readfile, fileName)
+        if not ok or not raw then return false end
+        local HttpService = game:GetService("HttpService")
+        local success, data = pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+        if not success or type(data) ~= "table" then return false end
+        for flag, value in pairs(data) do
+            if type(value) == "table" and value.__type == "Color3" then
+                self.Flags[flag] = Color3.new(value.r, value.g, value.b)
+            elseif type(value) == "table" and value.__type == "array" then
+                self.Flags[flag] = value.v
+            else
+                self.Flags[flag] = value
+            end
+        end
+        return true
     end
 
     -- // Theme switcher
@@ -1675,15 +1749,16 @@ function CloudyLib:CreateWindow(config)
             local svDrag = false
             local svInteract = Create("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=8,Parent=pad})
             svInteract.InputBegan:Connect(function(inp)
-                if inp.UserInputType==Enum.UserInputType.MouseButton1 then svDrag=true end
+                if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then svDrag=true end
             end)
             UserInputService.InputEnded:Connect(function(inp)
-                if inp.UserInputType==Enum.UserInputType.MouseButton1 then svDrag=false end
+                if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then svDrag=false end
             end)
             RunService.RenderStepped:Connect(function()
                 if svDrag then
-                    local mx = UserInputService:GetMouseLocation().X
-                    local my = UserInputService:GetMouseLocation().Y
+                    local pos = UserInputService:GetMouseLocation()
+                    local mx = pos.X
+                    local my = pos.Y
                     local px = pad.AbsolutePosition.X; local py = pad.AbsolutePosition.Y
                     local pw = pad.AbsoluteSize.X;     local ph = pad.AbsoluteSize.Y
                     s = math.clamp((mx-px)/pw, 0, 1)
@@ -1696,10 +1771,10 @@ function CloudyLib:CreateWindow(config)
             local hueDrag = false
             local hueInteract = Create("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=6,Parent=hueStrip})
             hueInteract.InputBegan:Connect(function(inp)
-                if inp.UserInputType==Enum.UserInputType.MouseButton1 then hueDrag=true end
+                if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then hueDrag=true end
             end)
             UserInputService.InputEnded:Connect(function(inp)
-                if inp.UserInputType==Enum.UserInputType.MouseButton1 then hueDrag=false end
+                if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then hueDrag=false end
             end)
             RunService.RenderStepped:Connect(function()
                 if hueDrag then
