@@ -9,6 +9,8 @@
         • Window:LoadConfig(file) – Load Flags back from a JSON file (readfile)
         • Mobile / Touch support  – Dragging and sliders now work on touch devices
         • Canvas auto-sizing      – ScrollingFrames always fit their content
+        • ☁ Cloud corners         – Decorative cloud symbols at each window corner
+        •                           (tinted to active theme, updated on ApplyTheme)
 
     Original features:
         • Paragraph     – titled multi-line text block
@@ -223,6 +225,30 @@ function CloudyLib:CreateWindow(config)
     Create("UICorner", {CornerRadius = UDim.new(0, 12), Parent = Main})
     Create("UIStroke",  {Color = theme.Border, Thickness = 1.5, Parent = Main})
 
+    -- ☁️ Cloud corner decorations (one at each corner, tinted to Primary)
+    local function MakeCloudCorner(xAnchor, yAnchor, xPos, yPos, rotation)
+        return Create("TextLabel", {
+            Size                   = UDim2.new(0, 36, 0, 36),
+            Position               = UDim2.new(xPos, 0, yPos, 0),
+            AnchorPoint            = Vector2.new(xAnchor, yAnchor),
+            BackgroundTransparency = 1,
+            Text                   = "☁",
+            TextColor3             = theme.Primary,
+            TextTransparency       = 0.5,
+            Font                   = Enum.Font.GothamBold,
+            TextSize               = 22,
+            Rotation               = rotation,
+            ZIndex                 = 5,
+            Parent                 = Main,
+        })
+    end
+    local CloudCorners = {
+        MakeCloudCorner(0, 0, 0, 0,   0),   -- top-left
+        MakeCloudCorner(1, 0, 1, 0,  90),   -- top-right
+        MakeCloudCorner(0, 1, 0, 1, 270),   -- bottom-left
+        MakeCloudCorner(1, 1, 1, 1, 180),   -- bottom-right
+    }
+
     -- Glow shadow
     local Shadow = Create("ImageLabel", {
         Name                  = "Shadow",
@@ -362,11 +388,11 @@ function CloudyLib:CreateWindow(config)
     local minimized   = false
     local ContentFrame
 
-    local closeBtn = MakeTopBtn(-10, "✕", Color3.fromRGB(200,55,55), function()
+    MakeTopBtn(-10, "✕", Color3.fromRGB(200,55,55), function()
         Tween(Main, {Size = UDim2.new(0, size.X.Offset, 0, 0), BackgroundTransparency = 1}, 0.3)
         task.delay(0.35, function() ScreenGui:Destroy() end)
     end)
-    local minimizeBtn = MakeTopBtn(-46, "—", theme.Border, function()
+    MakeTopBtn(-46, "—", theme.Border, function()
         minimized = not minimized
         Tween(Main, {Size = minimized and UDim2.new(0, size.X.Offset, 0, 52) or size}, 0.3, Enum.EasingStyle.Back)
     end)
@@ -442,12 +468,15 @@ function CloudyLib:CreateWindow(config)
         Parent       = Sidebar,
     })
 
-    -- // Content
+    -- // Content frame — solid background so no blue bleed-through
     ContentFrame = Create("Frame", {
         Name                   = "Content",
-        Size                   = UDim2.new(1, -140, 1, -52),
-        Position               = UDim2.new(0, 140, 0, 52),
-        BackgroundTransparency = 1,
+        Size                   = UDim2.new(1, -141, 1, -53),
+        Position               = UDim2.new(0, 141, 0, 53),
+        BackgroundColor3       = theme.Background,
+        BackgroundTransparency = 0,
+        BorderSizePixel        = 0,
+        ClipsDescendants       = true,
         Parent                 = Main,
     })
 
@@ -461,7 +490,7 @@ function CloudyLib:CreateWindow(config)
         Flags     = {},
     }
 
-    -- // Notification system (bottom-right corner toast)
+    -- // Notification system
     local notifHolder = Create("Frame", {
         Size             = UDim2.new(0, 280, 1, 0),
         Position         = UDim2.new(1, -292, 0, 0),
@@ -488,7 +517,6 @@ function CloudyLib:CreateWindow(config)
         })
         Create("UICorner", {CornerRadius = UDim.new(0, 10), Parent = notif})
         Create("UIStroke",  {Color = t.Border, Thickness = 1, Parent = notif})
-        -- left accent bar
         local side = Create("Frame", {
             Size             = UDim2.new(0, 3, 1, 0),
             BackgroundColor3 = t.Primary,
@@ -519,7 +547,6 @@ function CloudyLib:CreateWindow(config)
             TextWrapped      = true,
             Parent           = notif,
         })
-        -- progress bar
         local prog = Create("Frame", {
             Size             = UDim2.new(1, 0, 0, 2),
             Position         = UDim2.new(0, 0, 1, -2),
@@ -556,7 +583,7 @@ function CloudyLib:CreateWindow(config)
         task.delay(0.35, function() ScreenGui:Destroy() end)
     end
 
-    -- // Config saving (uses writefile/readfile from exploit executor environment)
+    -- // Config saving
     function Window:SaveConfig(fileName)
         fileName = fileName or "CloudyLib_Config.json"
         local data = {}
@@ -571,9 +598,7 @@ function CloudyLib:CreateWindow(config)
         end
         local HttpService = game:GetService("HttpService")
         local ok, err = pcall(writefile, fileName, HttpService:JSONEncode(data))
-        if not ok then
-            warn("[CloudyLib] SaveConfig failed: " .. tostring(err))
-        end
+        if not ok then warn("[CloudyLib] SaveConfig failed: " .. tostring(err)) end
         return ok
     end
 
@@ -584,9 +609,7 @@ function CloudyLib:CreateWindow(config)
         local ok, raw = pcall(readfile, fileName)
         if not ok or not raw then return false end
         local HttpService = game:GetService("HttpService")
-        local success, data = pcall(function()
-            return HttpService:JSONDecode(raw)
-        end)
+        local success, data = pcall(function() return HttpService:JSONDecode(raw) end)
         if not success or type(data) ~= "table" then return false end
         for flag, value in pairs(data) do
             if type(value) == "table" and value.__type == "Color3" then
@@ -600,19 +623,24 @@ function CloudyLib:CreateWindow(config)
         return true
     end
 
-    -- // Theme switcher
+    -- // Theme switcher (also refreshes cloud corners)
     function Window:ApplyTheme(newName)
         local newT = Themes[newName]
         if not newT then return end
         self.Theme = newT
         theme = newT
-        Tween(Main,       {BackgroundColor3 = newT.Background}, 0.4)
-        Tween(Topbar,     {BackgroundColor3 = newT.Surface},    0.4)
-        Tween(Sidebar,    {BackgroundColor3 = newT.Surface},    0.4)
-        Tween(AccentLine, {BackgroundColor3 = newT.Primary},    0.4)
-        Shadow.ImageColor3 = newT.Glow
+        Tween(Main,          {BackgroundColor3 = newT.Background}, 0.4)
+        Tween(Topbar,        {BackgroundColor3 = newT.Surface},    0.4)
+        Tween(Sidebar,       {BackgroundColor3 = newT.Surface},    0.4)
+        Tween(AccentLine,    {BackgroundColor3 = newT.Primary},    0.4)
+        Tween(ContentFrame,  {BackgroundColor3 = newT.Background}, 0.4)
+        Shadow.ImageColor3    = newT.Glow
         TitleLabel.TextColor3 = newT.Text
         SubLabel.TextColor3   = newT.SubText
+        -- Update cloud corner tints
+        for _, cc in pairs(CloudCorners) do
+            Tween(cc, {TextColor3 = newT.Primary}, 0.4)
+        end
         for _, tab in pairs(self.Tabs) do
             if tab._themeRefresh then tab._themeRefresh(newT) end
         end
@@ -649,18 +677,20 @@ function CloudyLib:CreateWindow(config)
         })
         Create("UICorner", {CornerRadius = UDim.new(1, 0), Parent = TabAccent})
 
-        -- Content scroll
+        -- Content scroll — transparent so ContentFrame background shows
         local TabContent = Create("ScrollingFrame", {
-            Name                 = name .. "_Content",
-            Size                 = UDim2.new(1, 0, 1, 0),
+            Name                   = name .. "_Content",
+            Size                   = UDim2.new(1, 0, 1, 0),
             BackgroundTransparency = 1,
-            BorderSizePixel      = 0,
-            ScrollBarThickness   = 3,
-            ScrollBarImageColor3 = t.Border,
-            Visible              = isFirst,
-            CanvasSize           = UDim2.new(0, 0, 0, 0),
-            AutomaticCanvasSize  = Enum.AutomaticSize.Y,
-            Parent               = ContentFrame,
+            BorderSizePixel        = 0,
+            ScrollBarThickness     = 3,
+            ScrollBarImageColor3   = t.Border,
+            ScrollingDirection     = Enum.ScrollingDirection.Y,
+            Visible                = isFirst,
+            CanvasSize             = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+            ClipsDescendants       = true,
+            Parent                 = ContentFrame,
         })
         Create("UIListLayout", {
             Padding             = UDim.new(0, 6),
@@ -717,7 +747,6 @@ function CloudyLib:CreateWindow(config)
             })
             Create("UICorner", {CornerRadius = UDim.new(0, 9), Parent = card})
             Create("UIStroke",  {Color = t.Border, Thickness = 1, Transparency = 0.45, Parent = card})
-            -- cloud sheen
             local sheen = Create("Frame", {
                 Size             = UDim2.new(1, 0, 0.5, 0),
                 BackgroundColor3 = Color3.fromRGB(255,255,255),
@@ -774,7 +803,7 @@ function CloudyLib:CreateWindow(config)
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  DIVIDER  (NEW – from Rayfield)
+        --  DIVIDER
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateDivider()
             local wrapper = Create("Frame", {
@@ -782,7 +811,7 @@ function CloudyLib:CreateWindow(config)
                 BackgroundTransparency = 1,
                 Parent                 = TabContent,
             })
-            local line = Create("Frame", {
+            Create("Frame", {
                 Size             = UDim2.new(0.92, 0, 0, 1),
                 Position         = UDim2.new(0.04, 0, 0.5, 0),
                 BackgroundColor3 = t.Border,
@@ -796,20 +825,16 @@ function CloudyLib:CreateWindow(config)
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  LABEL  (enhanced – icon tint + color override)
+        --  LABEL
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateLabel(cfg)
             if type(cfg) == "string" then cfg = {Text = cfg} end
             cfg = cfg or {}
-            local bgColor  = cfg.Color or t.Card
-            local h        = cfg.Color and 36 or 36
-            local card     = MakeCard(h)
+            local card = MakeCard(36)
             if cfg.Color then
-                card.BackgroundColor3 = bgColor
+                card.BackgroundColor3 = cfg.Color
                 card.BackgroundTransparency = 0.25
             end
-
-            -- optional leading emoji/icon text
             local prefix = cfg.Icon and (cfg.Icon .. "  ") or "☁  "
             local lbl = MakeLabel(card,
                 prefix .. (cfg.Text or "Label"),
@@ -819,7 +844,6 @@ function CloudyLib:CreateWindow(config)
                 UDim2.new(0, 14, 0, 0),
                 UDim2.new(1, -22, 1, 0), 2
             )
-
             local val = {}
             function val:Set(newText, newIcon)
                 local p = newIcon and (newIcon .. "  ") or prefix
@@ -829,7 +853,7 @@ function CloudyLib:CreateWindow(config)
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  PARAGRAPH  (NEW – from Rayfield)
+        --  PARAGRAPH
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateParagraph(cfg)
             cfg = cfg or {}
@@ -893,7 +917,6 @@ function CloudyLib:CreateWindow(config)
                     UDim2.new(0, 14, 0, 30), UDim2.new(1, -68, 0, 13), 2)
             end
 
-            -- Switch track
             local track = Create("Frame", {
                 Size             = UDim2.new(0, 38, 0, 20),
                 Position         = UDim2.new(1, -50, 0.5, -10),
@@ -905,7 +928,6 @@ function CloudyLib:CreateWindow(config)
             Create("UICorner", {CornerRadius = UDim.new(1, 0), Parent = track})
             Create("UIStroke",  {Color = t.Border, Thickness = 1, Parent = track})
 
-            -- Knob
             local knob = Create("Frame", {
                 Size             = UDim2.new(0, 14, 0, 14),
                 Position         = val and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
@@ -923,12 +945,9 @@ function CloudyLib:CreateWindow(config)
                     BackgroundColor3 = val and t.Toggle or t.SubText,
                 }, 0.2, Enum.EasingStyle.Back)
                 Tween(track, {BackgroundColor3 = val and t.Primary or t.Surface}, 0.2)
-                if fireCallback and cfg.Callback then
-                    pcall(cfg.Callback, val)
-                end
+                if fireCallback and cfg.Callback then pcall(cfg.Callback, val) end
             end
 
-            -- Interact overlay
             local btn = Create("TextButton", {
                 Size             = UDim2.new(1, 0, 1, 0),
                 BackgroundTransparency = 1,
@@ -954,7 +973,7 @@ function CloudyLib:CreateWindow(config)
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  SLIDER  (enhanced – Increment + Range[min,max])
+        --  SLIDER
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateSlider(cfg)
             cfg = cfg or {}
@@ -982,7 +1001,6 @@ function CloudyLib:CreateWindow(config)
                 Parent           = card,
             })
 
-            -- Track
             local trackBg = Create("Frame", {
                 Size             = UDim2.new(1, -28, 0, 6),
                 Position         = UDim2.new(0, 14, 0, 40),
@@ -994,7 +1012,6 @@ function CloudyLib:CreateWindow(config)
             Create("UICorner", {CornerRadius = UDim.new(1, 0), Parent = trackBg})
             Create("UIStroke",  {Color = t.Border, Thickness = 1, Transparency = 0.4, Parent = trackBg})
 
-            -- Fill
             local fillPct = (curVal - minV) / (maxV - minV)
             local fill = Create("Frame", {
                 Size             = UDim2.new(fillPct, 0, 1, 0),
@@ -1012,7 +1029,6 @@ function CloudyLib:CreateWindow(config)
                 Parent = fill,
             })
 
-            -- Knob
             local knob = Create("Frame", {
                 Size             = UDim2.new(0, 14, 0, 14),
                 Position         = UDim2.new(fillPct, -7, 0.5, -7),
@@ -1024,7 +1040,6 @@ function CloudyLib:CreateWindow(config)
             Create("UICorner", {CornerRadius = UDim.new(1, 0), Parent = knob})
             Create("UIStroke",  {Color = t.Primary, Thickness = 2, Parent = knob})
 
-            -- Drag logic
             local draggingSl = false
             local function updateSlider(mouseX)
                 local abs  = trackBg.AbsolutePosition.X
@@ -1088,13 +1103,10 @@ function CloudyLib:CreateWindow(config)
         function Tab:CreateButton(cfg)
             cfg = cfg or {}
             local card = MakeCard(44)
-
             local icon = cfg.Icon and (cfg.Icon .. "  ") or ""
             MakeLabel(card, icon .. (cfg.Name or "Button"),
                 Enum.Font.GothamSemibold, 13, t.Text, Enum.TextXAlignment.Left,
                 UDim2.new(0, 14, 0, 0), UDim2.new(1, -28, 1, 0), 2)
-
-            -- Arrow hint
             Create("TextLabel", {
                 Size             = UDim2.new(0, 20, 1, 0),
                 Position         = UDim2.new(1, -28, 0, 0),
@@ -1106,7 +1118,6 @@ function CloudyLib:CreateWindow(config)
                 ZIndex           = 2,
                 Parent           = card,
             })
-
             local btn = Create("TextButton", {
                 Size             = UDim2.new(1, 0, 1, 0),
                 BackgroundTransparency = 1,
@@ -1120,10 +1131,8 @@ function CloudyLib:CreateWindow(config)
             end)
             btn.MouseEnter:Connect(function() Tween(card, {BackgroundColor3 = t.Surface}, 0.15) end)
             btn.MouseLeave:Connect(function() Tween(card, {BackgroundColor3 = t.Card},    0.15) end)
-
             local handle = {}
             function handle:Set(newName)
-                -- update displayed text
                 for _, ch in ipairs(card:GetChildren()) do
                     if ch:IsA("TextLabel") and ch.Text:find(cfg.Name or "Button") then
                         ch.Text = (cfg.Icon and cfg.Icon .. "  " or "") .. newName
@@ -1135,17 +1144,14 @@ function CloudyLib:CreateWindow(config)
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  INPUT  (NEW – full Rayfield-style input box)
+        --  INPUT
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateInput(cfg)
             cfg = cfg or {}
             local card = MakeCard(60)
-
             MakeLabel(card, cfg.Name or "Input",
                 Enum.Font.GothamSemibold, 13, t.Text, Enum.TextXAlignment.Left,
                 UDim2.new(0, 14, 0, 7), UDim2.new(1, -28, 0, 16), 2)
-
-            -- Box frame
             local boxFrame = Create("Frame", {
                 Size             = UDim2.new(1, -28, 0, 28),
                 Position         = UDim2.new(0, 14, 0, 28),
@@ -1156,7 +1162,6 @@ function CloudyLib:CreateWindow(config)
             })
             Create("UICorner", {CornerRadius = UDim.new(0, 7), Parent = boxFrame})
             Create("UIStroke",  {Color = t.Border, Thickness = 1, Transparency = 0.3, Parent = boxFrame})
-
             local box = Create("TextBox", {
                 Size             = UDim2.new(1, -16, 1, 0),
                 Position         = UDim2.new(0, 8, 0, 0),
@@ -1172,11 +1177,8 @@ function CloudyLib:CreateWindow(config)
                 ZIndex           = 3,
                 Parent           = boxFrame,
             })
-
             box.FocusLost:Connect(function(entered)
-                if cfg.Callback then
-                    pcall(cfg.Callback, box.Text, entered)
-                end
+                if cfg.Callback then pcall(cfg.Callback, box.Text, entered) end
                 if cfg.RemoveTextAfterFocusLost then box.Text = "" end
                 if cfg.Flag then Window.Flags[cfg.Flag] = box.Text end
             end)
@@ -1189,7 +1191,6 @@ function CloudyLib:CreateWindow(config)
             box.FocusLost:Connect(function()
                 Tween(boxFrame, {BackgroundColor3 = t.Surface}, 0.15)
             end)
-
             local handle = {}
             function handle:Set(text)
                 box.Text = text
@@ -1201,20 +1202,16 @@ function CloudyLib:CreateWindow(config)
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  KEYBIND  (NEW – full Rayfield-style keybind with HoldToInteract)
+        --  KEYBIND
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateKeybind(cfg)
             cfg = cfg or {}
-            local currentKey  = cfg.Default or cfg.CurrentKeybind or "None"
-            local listening   = false
-
+            local currentKey = cfg.Default or cfg.CurrentKeybind or "None"
+            local listening  = false
             local card = MakeCard(44)
-
             MakeLabel(card, cfg.Name or "Keybind",
                 Enum.Font.GothamSemibold, 13, t.Text, Enum.TextXAlignment.Left,
                 UDim2.new(0, 14, 0, 0), UDim2.new(1, -110, 1, 0), 2)
-
-            -- Key pill
             local pill = Create("TextButton", {
                 Size             = UDim2.new(0, 80, 0, 26),
                 Position         = UDim2.new(1, -90, 0.5, -13),
@@ -1228,14 +1225,11 @@ function CloudyLib:CreateWindow(config)
             })
             Create("UICorner", {CornerRadius = UDim.new(0, 7), Parent = pill})
             Create("UIStroke",  {Color = t.Border, Thickness = 1, Transparency = 0.3, Parent = pill})
-
             pill.MouseButton1Click:Connect(function()
                 listening = true
                 pill.Text = "…"
                 Tween(pill, {BackgroundColor3 = t.Card}, 0.15)
             end)
-
-            local holdConn
             UserInputService.InputBegan:Connect(function(inp, gp)
                 if listening then
                     if inp.KeyCode ~= Enum.KeyCode.Unknown then
@@ -1245,9 +1239,7 @@ function CloudyLib:CreateWindow(config)
                         listening   = false
                         Tween(pill, {BackgroundColor3 = t.Surface}, 0.15)
                         if cfg.Flag then Window.Flags[cfg.Flag] = currentKey end
-                        if cfg.CallOnChange and cfg.Callback then
-                            pcall(cfg.Callback, currentKey)
-                        end
+                        if cfg.CallOnChange and cfg.Callback then pcall(cfg.Callback, currentKey) end
                     end
                 elseif not gp and currentKey ~= "None" and inp.KeyCode == Enum.KeyCode[currentKey] then
                     if cfg.HoldToInteract then
@@ -1258,6 +1250,7 @@ function CloudyLib:CreateWindow(config)
                         end)
                         task.wait(0.25)
                         if held then
+                            local holdConn
                             holdConn = RunService.Stepped:Connect(function()
                                 if not held then
                                     if cfg.Callback then pcall(cfg.Callback, false) end
@@ -1272,7 +1265,6 @@ function CloudyLib:CreateWindow(config)
                     end
                 end
             end)
-
             local handle = {}
             function handle:Set(key)
                 currentKey = key
@@ -1284,49 +1276,33 @@ function CloudyLib:CreateWindow(config)
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  DROPDOWN  (NEW – single or multi-select)
+        --  DROPDOWN
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateDropdown(cfg)
             cfg = cfg or {}
-            local options     = cfg.Options or {}
-            local multi       = cfg.MultipleOptions or cfg.Multi or false
-            local selected    = {}
-
-            -- Normalise default selection
+            local options  = cfg.Options or {}
+            local multi    = cfg.MultipleOptions or cfg.Multi or false
+            local selected = {}
             if cfg.Default then
-                if type(cfg.Default) == "string" then
-                    selected = {cfg.Default}
-                elseif type(cfg.Default) == "table" then
-                    selected = cfg.Default
-                end
+                if type(cfg.Default) == "string" then selected = {cfg.Default}
+                elseif type(cfg.Default) == "table" then selected = cfg.Default end
             elseif cfg.CurrentOption then
-                if type(cfg.CurrentOption) == "string" then
-                    selected = {cfg.CurrentOption}
-                else
-                    selected = cfg.CurrentOption
-                end
+                if type(cfg.CurrentOption) == "string" then selected = {cfg.CurrentOption}
+                else selected = cfg.CurrentOption end
             end
-
             local function selectedText()
                 if #selected == 0 then return "None"
                 elseif #selected == 1 then return selected[1]
-                else return "Various (" .. #selected .. ")"
-                end
+                else return "Various (" .. #selected .. ")" end
             end
-
             local isOpen = false
             local ITEM_H = 32
             local closedH = 44
-            local maxItems = math.min(#options, 5)
-
             local card = MakeCard(closedH)
             card.ClipsDescendants = true
-
             MakeLabel(card, cfg.Name or "Dropdown",
                 Enum.Font.GothamSemibold, 13, t.Text, Enum.TextXAlignment.Left,
                 UDim2.new(0, 14, 0, 0), UDim2.new(0.6, 0, 0, closedH), 2)
-
-            -- Selected value label
             local selLabel = Create("TextLabel", {
                 Size             = UDim2.new(0, 110, 0, closedH),
                 Position         = UDim2.new(1, -126, 0, 0),
@@ -1339,8 +1315,6 @@ function CloudyLib:CreateWindow(config)
                 ZIndex           = 2,
                 Parent           = card,
             })
-
-            -- Arrow
             local arrow = Create("TextLabel", {
                 Size             = UDim2.new(0, 14, 0, closedH),
                 Position         = UDim2.new(1, -18, 0, 0),
@@ -1352,8 +1326,6 @@ function CloudyLib:CreateWindow(config)
                 ZIndex           = 2,
                 Parent           = card,
             })
-
-            -- Separator
             local sep = Create("Frame", {
                 Size             = UDim2.new(1, 0, 0, 1),
                 Position         = UDim2.new(0, 0, 0, closedH - 1),
@@ -1364,8 +1336,6 @@ function CloudyLib:CreateWindow(config)
                 ZIndex           = 2,
                 Parent           = card,
             })
-
-            -- List container (scrollable)
             local listFrame = Create("ScrollingFrame", {
                 Size                 = UDim2.new(1, 0, 0, 0),
                 Position             = UDim2.new(0, 0, 0, closedH),
@@ -1379,16 +1349,11 @@ function CloudyLib:CreateWindow(config)
                 Parent               = card,
             })
             Create("UIListLayout", {Padding=UDim.new(0,0), Parent=listFrame})
-
             local function isSelected(opt)
-                for _, s in ipairs(selected) do
-                    if s == opt then return true end
-                end
+                for _, s in ipairs(selected) do if s == opt then return true end end
                 return false
             end
-
             local optionBtns = {}
-
             local function refreshVisuals()
                 for _, ob in ipairs(optionBtns) do
                     Tween(ob.frame, {BackgroundColor3 = isSelected(ob.name) and t.Primary or t.Surface}, 0.15)
@@ -1396,130 +1361,72 @@ function CloudyLib:CreateWindow(config)
                 end
                 selLabel.Text = selectedText()
             end
-
             for _, opt in ipairs(options) do
-                local row = Create("Frame", {
-                    Size             = UDim2.new(1, 0, 0, ITEM_H),
-                    BackgroundColor3 = isSelected(opt) and t.Primary or t.Surface,
-                    BorderSizePixel  = 0,
-                    ZIndex           = 4,
-                    Parent           = listFrame,
-                })
-                local rowLbl = Create("TextLabel", {
-                    Size             = UDim2.new(1, -16, 1, 0),
-                    Position         = UDim2.new(0, 14, 0, 0),
-                    BackgroundTransparency = 1,
-                    Text             = (isSelected(opt) and "✓  " or "   ") .. opt,
-                    TextColor3       = isSelected(opt) and t.Text or t.SubText,
-                    Font             = Enum.Font.Gotham,
-                    TextSize         = 12,
-                    TextXAlignment   = Enum.TextXAlignment.Left,
-                    ZIndex           = 4,
-                    Parent           = row,
-                })
-                local rowBtn = Create("TextButton", {
-                    Size             = UDim2.new(1, 0, 1, 0),
-                    BackgroundTransparency = 1,
-                    Text             = "",
-                    ZIndex           = 5,
-                    Parent           = row,
-                })
+                local row = Create("Frame", {Size=UDim2.new(1,0,0,ITEM_H), BackgroundColor3=isSelected(opt) and t.Primary or t.Surface, BorderSizePixel=0, ZIndex=4, Parent=listFrame})
+                local rowLbl = Create("TextLabel", {Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,14,0,0), BackgroundTransparency=1, Text=(isSelected(opt) and "✓  " or "   ")..opt, TextColor3=isSelected(opt) and t.Text or t.SubText, Font=Enum.Font.Gotham, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=4, Parent=row})
+                local rowBtn = Create("TextButton", {Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Text="", ZIndex=5, Parent=row})
                 table.insert(optionBtns, {frame=row, label=rowLbl, name=opt})
-
                 rowBtn.MouseButton1Click:Connect(function()
                     if multi then
                         if isSelected(opt) then
-                            for i, s in ipairs(selected) do
-                                if s == opt then table.remove(selected, i); break end
-                            end
-                        else
-                            table.insert(selected, opt)
-                        end
-                    else
-                        selected = {opt}
-                    end
-                    -- update tick marks
-                    for _, ob in ipairs(optionBtns) do
-                        ob.label.Text = (isSelected(ob.name) and "✓  " or "   ") .. ob.name
-                    end
+                            for i, s in ipairs(selected) do if s == opt then table.remove(selected, i); break end end
+                        else table.insert(selected, opt) end
+                    else selected = {opt} end
+                    for _, ob in ipairs(optionBtns) do ob.label.Text = (isSelected(ob.name) and "✓  " or "   ")..ob.name end
                     refreshVisuals()
-                    if cfg.Callback then
-                        pcall(cfg.Callback, multi and selected or selected[1])
-                    end
+                    if cfg.Callback then pcall(cfg.Callback, multi and selected or selected[1]) end
                     if cfg.Flag then Window.Flags[cfg.Flag] = multi and selected or selected[1] end
                     if not multi then
-                        -- close after single selection
                         isOpen = false
-                        Tween(card, {Size = UDim2.new(1, 0, 0, closedH)}, 0.25, Enum.EasingStyle.Back)
-                        sep.Visible = false
-                        listFrame.Visible = false
-                        arrow.Text = "▾"
+                        Tween(card, {Size=UDim2.new(1,0,0,closedH)}, 0.25, Enum.EasingStyle.Back)
+                        sep.Visible = false; listFrame.Visible = false; arrow.Text = "▾"
                     end
                 end)
             end
-
-            -- Toggle open/close
-            local interact = Create("TextButton", {
-                Size             = UDim2.new(1, 0, 0, closedH),
-                BackgroundTransparency = 1,
-                Text             = "",
-                ZIndex           = 3,
-                Parent           = card,
-            })
+            local interact = Create("TextButton", {Size=UDim2.new(1,0,0,closedH), BackgroundTransparency=1, Text="", ZIndex=3, Parent=card})
             interact.MouseButton1Click:Connect(function()
                 isOpen = not isOpen
                 local openH = closedH + math.min(#options, 5) * ITEM_H + 4
                 if isOpen then
-                    listFrame.Visible = true
-                    sep.Visible = true
-                    arrow.Text  = "▴"
-                    Tween(card, {Size = UDim2.new(1, 0, 0, openH)}, 0.25, Enum.EasingStyle.Back)
-                    Tween(listFrame, {Size = UDim2.new(1, 0, 0, math.min(#options, 5) * ITEM_H)}, 0.2)
+                    listFrame.Visible = true; sep.Visible = true; arrow.Text = "▴"
+                    Tween(card, {Size=UDim2.new(1,0,0,openH)}, 0.25, Enum.EasingStyle.Back)
+                    Tween(listFrame, {Size=UDim2.new(1,0,0,math.min(#options,5)*ITEM_H)}, 0.2)
                 else
                     arrow.Text = "▾"
-                    Tween(card, {Size = UDim2.new(1, 0, 0, closedH)}, 0.2, Enum.EasingStyle.Back)
-                    Tween(listFrame, {Size = UDim2.new(1, 0, 0, 0)}, 0.15)
-                    task.delay(0.2, function()
-                        sep.Visible = false
-                        listFrame.Visible = false
-                    end)
+                    Tween(card, {Size=UDim2.new(1,0,0,closedH)}, 0.2, Enum.EasingStyle.Back)
+                    Tween(listFrame, {Size=UDim2.new(1,0,0,0)}, 0.15)
+                    task.delay(0.2, function() sep.Visible = false; listFrame.Visible = false end)
                 end
             end)
-            interact.MouseEnter:Connect(function() Tween(card, {BackgroundColor3 = t.Surface}, 0.15) end)
-            interact.MouseLeave:Connect(function() if not isOpen then Tween(card, {BackgroundColor3 = t.Card}, 0.15) end end)
-
+            interact.MouseEnter:Connect(function() Tween(card,{BackgroundColor3=t.Surface},0.15) end)
+            interact.MouseLeave:Connect(function() if not isOpen then Tween(card,{BackgroundColor3=t.Card},0.15) end end)
             local handle = {}
             function handle:Set(newOpt)
                 if type(newOpt) == "string" then newOpt = {newOpt} end
                 selected = newOpt
-                for _, ob in ipairs(optionBtns) do
-                    ob.label.Text = (isSelected(ob.name) and "✓  " or "   ") .. ob.name
-                end
+                for _, ob in ipairs(optionBtns) do ob.label.Text = (isSelected(ob.name) and "✓  " or "   ")..ob.name end
                 refreshVisuals()
                 if cfg.Flag then Window.Flags[cfg.Flag] = multi and selected or selected[1] end
             end
             function handle:Refresh(newOptions)
-                -- clear and rebuild
                 options = newOptions
                 for _, ob in ipairs(optionBtns) do ob.frame:Destroy() end
                 optionBtns = {}
-                listFrame.CanvasSize = UDim2.new(0, 0, 0, #newOptions * ITEM_H)
+                listFrame.CanvasSize = UDim2.new(0,0,0,#newOptions*ITEM_H)
                 for _, opt in ipairs(newOptions) do
-                    local row = Create("Frame", {Size=UDim2.new(1,0,0,ITEM_H), BackgroundColor3=isSelected(opt) and t.Primary or t.Surface, BorderSizePixel=0, ZIndex=4, Parent=listFrame})
-                    local rowLbl = Create("TextLabel", {Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,14,0,0), BackgroundTransparency=1, Text=(isSelected(opt) and "✓  " or "   ")..opt, TextColor3=isSelected(opt) and t.Text or t.SubText, Font=Enum.Font.Gotham, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=4, Parent=row})
-                    local rowBtn = Create("TextButton", {Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Text="", ZIndex=5, Parent=row})
-                    table.insert(optionBtns, {frame=row, label=rowLbl, name=opt})
+                    local row = Create("Frame",{Size=UDim2.new(1,0,0,ITEM_H),BackgroundColor3=isSelected(opt) and t.Primary or t.Surface,BorderSizePixel=0,ZIndex=4,Parent=listFrame})
+                    local rowLbl = Create("TextLabel",{Size=UDim2.new(1,-16,1,0),Position=UDim2.new(0,14,0,0),BackgroundTransparency=1,Text=(isSelected(opt) and "✓  " or "   ")..opt,TextColor3=isSelected(opt) and t.Text or t.SubText,Font=Enum.Font.Gotham,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=4,Parent=row})
+                    local rowBtn = Create("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=5,Parent=row})
+                    table.insert(optionBtns,{frame=row,label=rowLbl,name=opt})
                     rowBtn.MouseButton1Click:Connect(function()
                         if multi then
                             if isSelected(opt) then for i,s in ipairs(selected) do if s==opt then table.remove(selected,i);break end end
-                            else table.insert(selected, opt) end
+                            else table.insert(selected,opt) end
                         else selected={opt} end
                         for _,ob in ipairs(optionBtns) do ob.label.Text=(isSelected(ob.name) and "✓  " or "   ")..ob.name end
                         refreshVisuals()
                         if cfg.Callback then pcall(cfg.Callback, multi and selected or selected[1]) end
-                        if not multi then
-                            isOpen=false; Tween(card,{Size=UDim2.new(1,0,0,closedH)},0.25,Enum.EasingStyle.Back); sep.Visible=false; listFrame.Visible=false; arrow.Text="▾"
-                        end
+                        if not multi then isOpen=false;Tween(card,{Size=UDim2.new(1,0,0,closedH)},0.25,Enum.EasingStyle.Back);sep.Visible=false;listFrame.Visible=false;arrow.Text="▾" end
                     end)
                 end
             end
@@ -1528,23 +1435,19 @@ function CloudyLib:CreateWindow(config)
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  COLOR PICKER  (NEW – HSV 2D pad + hue strip + hex + RGB)
+        --  COLOR PICKER
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateColorPicker(cfg)
             cfg = cfg or {}
             local color = cfg.Default or cfg.Color or Color3.fromRGB(130,185,255)
             local h, s, v = color:ToHSV()
             local isOpen  = false
-
             local closedH = 44
             local card    = MakeCard(closedH)
             card.ClipsDescendants = true
-
             MakeLabel(card, cfg.Name or "Color",
                 Enum.Font.GothamSemibold, 13, t.Text, Enum.TextXAlignment.Left,
                 UDim2.new(0, 14, 0, 0), UDim2.new(0.7, 0, 0, closedH), 2)
-
-            -- Color preview swatch
             local swatch = Create("Frame", {
                 Size             = UDim2.new(0, 28, 0, 20),
                 Position         = UDim2.new(1, -42, 0.5, -10),
@@ -1555,8 +1458,6 @@ function CloudyLib:CreateWindow(config)
             })
             Create("UICorner", {CornerRadius = UDim.new(0, 6), Parent = swatch})
             Create("UIStroke",  {Color = t.Border, Thickness = 1, Parent = swatch})
-
-            -- Dropdown arrow
             local arrow = Create("TextLabel", {
                 Size             = UDim2.new(0, 14, 0, closedH),
                 Position         = UDim2.new(1, -18, 0, 0),
@@ -1568,8 +1469,6 @@ function CloudyLib:CreateWindow(config)
                 ZIndex           = 2,
                 Parent           = card,
             })
-
-            -- ── PANEL (hidden by default) ──────────────────────────
             local panelH = 170
             local panel = Create("Frame", {
                 Size             = UDim2.new(1, -20, 0, panelH),
@@ -1579,8 +1478,6 @@ function CloudyLib:CreateWindow(config)
                 ZIndex           = 3,
                 Parent           = card,
             })
-
-            -- SV 2D pad
             local pad = Create("Frame", {
                 Size             = UDim2.new(0, 120, 0, 90),
                 Position         = UDim2.new(0, 0, 0, 0),
@@ -1590,162 +1487,54 @@ function CloudyLib:CreateWindow(config)
                 Parent           = panel,
             })
             Create("UICorner", {CornerRadius = UDim.new(0, 6), Parent = pad})
-            -- saturation white gradient
-            local satGrad = Create("Frame", {
-                Size             = UDim2.new(1,0,1,0),
-                BackgroundColor3 = Color3.fromRGB(255,255,255),
-                BackgroundTransparency = 0,
-                BorderSizePixel  = 0,
-                ZIndex           = 5,
-                Parent           = pad,
-            })
-            Create("UICorner", {CornerRadius=UDim.new(0,6), Parent=satGrad})
-            Create("UIGradient", {
-                Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255,255,255)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(255,255,255)),
-                }),
-                Transparency = NumberSequence.new({
-                    NumberSequenceKeypoint.new(0, 0),
-                    NumberSequenceKeypoint.new(1, 1),
-                }),
-                Rotation = 0,
-                Parent = satGrad,
-            })
-            -- value black gradient
-            local valGrad = Create("Frame", {
-                Size             = UDim2.new(1,0,1,0),
-                BackgroundColor3 = Color3.fromRGB(0,0,0),
-                BackgroundTransparency = 0,
-                BorderSizePixel  = 0,
-                ZIndex           = 6,
-                Parent           = pad,
-            })
-            Create("UICorner", {CornerRadius=UDim.new(0,6), Parent=valGrad})
-            Create("UIGradient", {
-                Transparency = NumberSequence.new({
-                    NumberSequenceKeypoint.new(0, 1),
-                    NumberSequenceKeypoint.new(1, 0),
-                }),
-                Rotation = 90,
-                Parent = valGrad,
-            })
-            -- SV cursor
-            local svCursor = Create("Frame", {
-                Size             = UDim2.new(0, 10, 0, 10),
-                BackgroundColor3 = Color3.fromRGB(255,255,255),
-                BorderSizePixel  = 0,
-                ZIndex           = 7,
-                Parent           = pad,
-            })
-            Create("UICorner", {CornerRadius=UDim.new(1,0), Parent=svCursor})
-            Create("UIStroke",  {Color=Color3.fromRGB(0,0,0), Thickness=1.5, Parent=svCursor})
-
-            -- Hue strip (vertical, right side)
-            local hueStrip = Create("Frame", {
-                Size             = UDim2.new(0, 18, 0, 90),
-                Position         = UDim2.new(0, 128, 0, 0),
-                BorderSizePixel  = 0,
-                ZIndex           = 4,
-                Parent           = panel,
-            })
-            Create("UICorner", {CornerRadius=UDim.new(0,6), Parent=hueStrip})
-            -- rainbow gradient for hue strip
+            local satGrad = Create("Frame", {Size=UDim2.new(1,0,1,0), BackgroundColor3=Color3.fromRGB(255,255,255), BackgroundTransparency=0, BorderSizePixel=0, ZIndex=5, Parent=pad})
+            Create("UICorner",{CornerRadius=UDim.new(0,6),Parent=satGrad})
+            Create("UIGradient",{Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(255,255,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(255,255,255))}),Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)}),Rotation=0,Parent=satGrad})
+            local valGrad = Create("Frame", {Size=UDim2.new(1,0,1,0), BackgroundColor3=Color3.fromRGB(0,0,0), BackgroundTransparency=0, BorderSizePixel=0, ZIndex=6, Parent=pad})
+            Create("UICorner",{CornerRadius=UDim.new(0,6),Parent=valGrad})
+            Create("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}),Rotation=90,Parent=valGrad})
+            local svCursor = Create("Frame", {Size=UDim2.new(0,10,0,10), BackgroundColor3=Color3.fromRGB(255,255,255), BorderSizePixel=0, ZIndex=7, Parent=pad})
+            Create("UICorner",{CornerRadius=UDim.new(1,0),Parent=svCursor})
+            Create("UIStroke",{Color=Color3.fromRGB(0,0,0),Thickness=1.5,Parent=svCursor})
+            local hueStrip = Create("Frame", {Size=UDim2.new(0,18,0,90), Position=UDim2.new(0,128,0,0), BorderSizePixel=0, ZIndex=4, Parent=panel})
+            Create("UICorner",{CornerRadius=UDim.new(0,6),Parent=hueStrip})
             local hueColors = {}
-            for i = 0, 6 do
-                table.insert(hueColors, ColorSequenceKeypoint.new(i/6, Color3.fromHSV(i/6, 1, 1)))
-            end
-            Create("UIGradient", {
-                Color    = ColorSequence.new(hueColors),
-                Rotation = 90,
-                Parent   = hueStrip,
-            })
-            local hueCursor = Create("Frame", {
-                Size             = UDim2.new(1, 4, 0, 4),
-                Position         = UDim2.new(0, -2, 0, 0),
-                BackgroundColor3 = Color3.fromRGB(255,255,255),
-                BorderSizePixel  = 0,
-                ZIndex           = 5,
-                Parent           = hueStrip,
-            })
-            Create("UIStroke", {Color=Color3.fromRGB(0,0,0), Thickness=1.5, Parent=hueCursor})
-
-            -- Hex input
-            local hexFrame = Create("Frame", {
-                Size             = UDim2.new(0, 90, 0, 24),
-                Position         = UDim2.new(0, 0, 0, 98),
-                BackgroundColor3 = t.Surface,
-                BorderSizePixel  = 0,
-                ZIndex           = 4,
-                Parent           = panel,
-            })
-            Create("UICorner", {CornerRadius=UDim.new(0,6), Parent=hexFrame})
-            Create("UIStroke",  {Color=t.Border, Thickness=1, Parent=hexFrame})
-            local hexBox = Create("TextBox", {
-                Size             = UDim2.new(1,-8,1,0),
-                Position         = UDim2.new(0,4,0,0),
-                BackgroundTransparency = 1,
-                Text             = string.format("#%02X%02X%02X", math.floor(color.R*255), math.floor(color.G*255), math.floor(color.B*255)),
-                TextColor3       = t.Text,
-                Font             = Enum.Font.GothamBold,
-                TextSize         = 11,
-                ZIndex           = 5,
-                ClearTextOnFocus = false,
-                Parent           = hexFrame,
-            })
-
-            -- RGB row
+            for i = 0, 6 do table.insert(hueColors, ColorSequenceKeypoint.new(i/6, Color3.fromHSV(i/6,1,1))) end
+            Create("UIGradient",{Color=ColorSequence.new(hueColors),Rotation=90,Parent=hueStrip})
+            local hueCursor = Create("Frame", {Size=UDim2.new(1,4,0,4), Position=UDim2.new(0,-2,0,0), BackgroundColor3=Color3.fromRGB(255,255,255), BorderSizePixel=0, ZIndex=5, Parent=hueStrip})
+            Create("UIStroke",{Color=Color3.fromRGB(0,0,0),Thickness=1.5,Parent=hueCursor})
+            local hexFrame = Create("Frame", {Size=UDim2.new(0,90,0,24), Position=UDim2.new(0,0,0,98), BackgroundColor3=t.Surface, BorderSizePixel=0, ZIndex=4, Parent=panel})
+            Create("UICorner",{CornerRadius=UDim.new(0,6),Parent=hexFrame})
+            Create("UIStroke",{Color=t.Border,Thickness=1,Parent=hexFrame})
+            local hexBox = Create("TextBox", {Size=UDim2.new(1,-8,1,0), Position=UDim2.new(0,4,0,0), BackgroundTransparency=1, Text=string.format("#%02X%02X%02X",math.floor(color.R*255),math.floor(color.G*255),math.floor(color.B*255)), TextColor3=t.Text, Font=Enum.Font.GothamBold, TextSize=11, ZIndex=5, ClearTextOnFocus=false, Parent=hexFrame})
             local function makeRGBBox(label, xPos)
-                local f = Create("Frame", {
-                    Size=UDim2.new(0,38,0,24),
-                    Position=UDim2.new(0,xPos,0,128),
-                    BackgroundColor3=t.Surface,
-                    BorderSizePixel=0,
-                    ZIndex=4,
-                    Parent=panel,
-                })
+                local f = Create("Frame",{Size=UDim2.new(0,38,0,24),Position=UDim2.new(0,xPos,0,128),BackgroundColor3=t.Surface,BorderSizePixel=0,ZIndex=4,Parent=panel})
                 Create("UICorner",{CornerRadius=UDim.new(0,6),Parent=f})
                 Create("UIStroke",{Color=t.Border,Thickness=1,Parent=f})
-                Create("TextLabel",{
-                    Size=UDim2.new(1,0,0,10), Position=UDim2.new(0,0,0,-12),
-                    BackgroundTransparency=1, Text=label,
-                    TextColor3=t.SubText, Font=Enum.Font.GothamBold, TextSize=9,
-                    TextXAlignment=Enum.TextXAlignment.Center, ZIndex=4, Parent=f,
-                })
-                local box = Create("TextBox",{
-                    Size=UDim2.new(1,-4,1,0), Position=UDim2.new(0,2,0,0),
-                    BackgroundTransparency=1, Text="",
-                    TextColor3=t.Text, Font=Enum.Font.GothamBold, TextSize=11,
-                    ZIndex=5, ClearTextOnFocus=false, Parent=f,
-                })
-                return box
+                Create("TextLabel",{Size=UDim2.new(1,0,0,10),Position=UDim2.new(0,0,0,-12),BackgroundTransparency=1,Text=label,TextColor3=t.SubText,Font=Enum.Font.GothamBold,TextSize=9,TextXAlignment=Enum.TextXAlignment.Center,ZIndex=4,Parent=f})
+                return Create("TextBox",{Size=UDim2.new(1,-4,1,0),Position=UDim2.new(0,2,0,0),BackgroundTransparency=1,Text="",TextColor3=t.Text,Font=Enum.Font.GothamBold,TextSize=11,ZIndex=5,ClearTextOnFocus=false,Parent=f})
             end
-            local rBox = makeRGBBox("R", 0)
-            local gBox = makeRGBBox("G", 42)
-            local bBox = makeRGBBox("B", 84)
-
-            local function getColor() return Color3.fromHSV(h, s, v) end
-
+            local rBox = makeRGBBox("R",0)
+            local gBox = makeRGBBox("G",42)
+            local bBox = makeRGBBox("B",84)
+            local function getColor() return Color3.fromHSV(h,s,v) end
             local function updateUI()
                 local c = getColor()
-                pad.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+                pad.BackgroundColor3 = Color3.fromHSV(h,1,1)
                 swatch.BackgroundColor3 = c
-                svCursor.Position = UDim2.new(s, -5, 1-v, -5)
-                hueCursor.Position = UDim2.new(0,-2, h, -2)
-                hexBox.Text = string.format("#%02X%02X%02X", math.floor(c.R*255+0.5), math.floor(c.G*255+0.5), math.floor(c.B*255+0.5))
+                svCursor.Position = UDim2.new(s,-5,1-v,-5)
+                hueCursor.Position = UDim2.new(0,-2,h,-2)
+                hexBox.Text = string.format("#%02X%02X%02X",math.floor(c.R*255+0.5),math.floor(c.G*255+0.5),math.floor(c.B*255+0.5))
                 rBox.Text = tostring(math.floor(c.R*255+0.5))
                 gBox.Text = tostring(math.floor(c.G*255+0.5))
                 bBox.Text = tostring(math.floor(c.B*255+0.5))
             end
             updateUI()
-
             local function fireCallback()
                 local c = getColor()
                 if cfg.Callback then pcall(cfg.Callback, c) end
                 if cfg.Flag then Window.Flags[cfg.Flag] = c end
             end
-
-            -- SV pad drag
             local svDrag = false
             local svInteract = Create("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=8,Parent=pad})
             svInteract.InputBegan:Connect(function(inp)
@@ -1757,17 +1546,12 @@ function CloudyLib:CreateWindow(config)
             RunService.RenderStepped:Connect(function()
                 if svDrag then
                     local pos = UserInputService:GetMouseLocation()
-                    local mx = pos.X
-                    local my = pos.Y
-                    local px = pad.AbsolutePosition.X; local py = pad.AbsolutePosition.Y
-                    local pw = pad.AbsoluteSize.X;     local ph = pad.AbsoluteSize.Y
-                    s = math.clamp((mx-px)/pw, 0, 1)
-                    v = 1 - math.clamp((my-py)/ph, 0, 1)
+                    local px=pad.AbsolutePosition.X; local py=pad.AbsolutePosition.Y
+                    local pw=pad.AbsoluteSize.X;     local ph=pad.AbsoluteSize.Y
+                    s=math.clamp((pos.X-px)/pw,0,1); v=1-math.clamp((pos.Y-py)/ph,0,1)
                     updateUI(); fireCallback()
                 end
             end)
-
-            -- Hue strip drag
             local hueDrag = false
             local hueInteract = Create("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=6,Parent=hueStrip})
             hueInteract.InputBegan:Connect(function(inp)
@@ -1778,84 +1562,54 @@ function CloudyLib:CreateWindow(config)
             end)
             RunService.RenderStepped:Connect(function()
                 if hueDrag then
-                    local my = UserInputService:GetMouseLocation().Y
-                    local py = hueStrip.AbsolutePosition.Y
-                    local ph = hueStrip.AbsoluteSize.Y
-                    h = math.clamp((my-py)/ph, 0, 1)
-                    updateUI(); fireCallback()
+                    local my=UserInputService:GetMouseLocation().Y
+                    local py=hueStrip.AbsolutePosition.Y; local ph=hueStrip.AbsoluteSize.Y
+                    h=math.clamp((my-py)/ph,0,1); updateUI(); fireCallback()
                 end
             end)
-
-            -- Hex input
             hexBox.FocusLost:Connect(function()
-                local hex = hexBox.Text:gsub("#","")
-                if #hex == 6 then
-                    local r2,g2,b2 = tonumber(hex:sub(1,2),16), tonumber(hex:sub(3,4),16), tonumber(hex:sub(5,6),16)
-                    if r2 and g2 and b2 then
-                        local c = Color3.fromRGB(r2,g2,b2)
-                        h,s,v = c:ToHSV()
-                        updateUI(); fireCallback()
-                    end
+                local hex=hexBox.Text:gsub("#","")
+                if #hex==6 then
+                    local r2,g2,b2=tonumber(hex:sub(1,2),16),tonumber(hex:sub(3,4),16),tonumber(hex:sub(5,6),16)
+                    if r2 and g2 and b2 then local c=Color3.fromRGB(r2,g2,b2); h,s,v=c:ToHSV(); updateUI(); fireCallback() end
                 end
             end)
-
-            -- RGB inputs
             local function rgbFocusLost()
-                local r2 = tonumber(rBox.Text) or 0
-                local g2 = tonumber(gBox.Text) or 0
-                local b2 = tonumber(bBox.Text) or 0
-                local c = Color3.fromRGB(
-                    math.clamp(r2,0,255),
-                    math.clamp(g2,0,255),
-                    math.clamp(b2,0,255)
-                )
-                h,s,v = c:ToHSV()
-                updateUI(); fireCallback()
+                local c=Color3.fromRGB(math.clamp(tonumber(rBox.Text) or 0,0,255),math.clamp(tonumber(gBox.Text) or 0,0,255),math.clamp(tonumber(bBox.Text) or 0,0,255))
+                h,s,v=c:ToHSV(); updateUI(); fireCallback()
             end
             rBox.FocusLost:Connect(rgbFocusLost)
             gBox.FocusLost:Connect(rgbFocusLost)
             bBox.FocusLost:Connect(rgbFocusLost)
-
-            -- Toggle open/close
-            local interact = Create("TextButton",{
-                Size=UDim2.new(1,0,0,closedH), BackgroundTransparency=1, Text="", ZIndex=3, Parent=card,
-            })
+            local interact = Create("TextButton",{Size=UDim2.new(1,0,0,closedH),BackgroundTransparency=1,Text="",ZIndex=3,Parent=card})
             interact.MouseButton1Click:Connect(function()
                 isOpen = not isOpen
                 if isOpen then
-                    panel.Visible = true
-                    arrow.Text    = "▴"
-                    Tween(card, {Size=UDim2.new(1,0,0,closedH+panelH+16)}, 0.25, Enum.EasingStyle.Back)
+                    panel.Visible=true; arrow.Text="▴"
+                    Tween(card,{Size=UDim2.new(1,0,0,closedH+panelH+16)},0.25,Enum.EasingStyle.Back)
                 else
-                    arrow.Text = "▾"
-                    Tween(card, {Size=UDim2.new(1,0,0,closedH)}, 0.2)
-                    task.delay(0.22, function() panel.Visible = false end)
+                    arrow.Text="▾"
+                    Tween(card,{Size=UDim2.new(1,0,0,closedH)},0.2)
+                    task.delay(0.22,function() panel.Visible=false end)
                 end
             end)
             interact.MouseEnter:Connect(function() Tween(card,{BackgroundColor3=t.Surface},0.15) end)
             interact.MouseLeave:Connect(function() if not isOpen then Tween(card,{BackgroundColor3=t.Card},0.15) end end)
-
             local handle = {}
-            function handle:Set(newColor)
-                h,s,v = newColor:ToHSV()
-                updateUI()
-                if cfg.Flag then Window.Flags[cfg.Flag] = newColor end
-            end
+            function handle:Set(newColor) h,s,v=newColor:ToHSV(); updateUI(); if cfg.Flag then Window.Flags[cfg.Flag]=newColor end end
             function handle:Get() return getColor() end
             return handle
         end
 
         -- ──────────────────────────────────────────────────────────
-        --  THEME SELECTOR  (combined dropdown + swatches)
+        --  THEME SELECTOR
         -- ──────────────────────────────────────────────────────────
         function Tab:CreateThemeSelector(cfg)
             cfg = cfg or {}
             self:CreateSection(cfg.Name or "Sky Themes")
-
             local themeNames = {}
             for k in pairs(Themes) do table.insert(themeNames, k) end
             table.sort(themeNames)
-
             self:CreateDropdown({
                 Name     = "Active Theme",
                 Options  = themeNames,
@@ -1865,8 +1619,6 @@ function CloudyLib:CreateWindow(config)
                     if cfg.Callback then cfg.Callback(chosen) end
                 end,
             })
-
-            -- Swatches
             local swatchCard = MakeCard(56)
             swatchCard.Size  = UDim2.new(1, 0, 0, 56)
             Create("UIGridLayout", {
@@ -1875,10 +1627,7 @@ function CloudyLib:CreateWindow(config)
                 HorizontalAlignment = Enum.HorizontalAlignment.Left,
                 Parent              = swatchCard,
             })
-            Create("UIPadding", {
-                PaddingLeft=UDim.new(0,10), PaddingTop=UDim.new(0,8),
-                Parent=swatchCard,
-            })
+            Create("UIPadding", {PaddingLeft=UDim.new(0,10), PaddingTop=UDim.new(0,8), Parent=swatchCard})
             for _, name in ipairs(themeNames) do
                 local th = Themes[name]
                 local sw = Create("TextButton", {
@@ -1899,18 +1648,17 @@ function CloudyLib:CreateWindow(config)
             end
         end
 
-        -- Notify shortcut on Tab
         function Tab:Notify(cfg) Window:Notify(cfg) end
 
         return Tab
     end -- CreateTab
 
-    -- // Animate open
+    -- // Animate window open (float in from above)
     Main.Position = UDim2.new(0.5, 0, 0.3, 0)
     Main.BackgroundTransparency = 1
     Tween(Main, {
         Position             = UDim2.new(0.5, 0, 0.5, 0),
-        BackgroundTransparency = 0
+        BackgroundTransparency = 0,
     }, 0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
     return Window
