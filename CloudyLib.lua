@@ -19,10 +19,16 @@
         • Flags / Configuration-saving ready (Flags table on Window)
 
     Usage:
-        local Cloudy = loadstring(game:HttpGet("YOUR_RAW_URL_HERE"))()
+        local Cloudy = loadstring(game:HttpGet("https://raw.githubusercontent.com/Larxyzs/CloudyLib/refs/heads/main/CloudyLib.lua"))()
         local Window = Cloudy:CreateWindow({ Title = "My Script", Theme = "Cumulus" })
         local Tab = Window:CreateTab("Main", "⚡")
         Tab:CreateToggle({ Name = "Fly", Default = false, Callback = function(v) end })
+
+    Docs:
+        https://larxyzs.github.io/CloudyLib/
+
+    Credits:
+        Luqzz (luqzzer, larxy, luqzzys)
 ]]
 
 -- // Services
